@@ -243,16 +243,22 @@ async function cloudLoad(action = "list", payload = {}, okMsg = "") {
   const code = AUTH.ownerCode;
   if (!code) return;
   cloudState.loading = true; cloudState.error = "";
+  let j = null;
   try {
-    const j = await CLOUD.call(action, code, payload);
+    j = await CLOUD.call(action, code, { appUrl: typeof SANARA_APP_URL !== "undefined" ? SANARA_APP_URL : "", ...payload });
     cloudState.list = j.list || []; cloudState.version = j.version || 1; cloudState.sheetUrl = j.sheetUrl || cloudState.sheetUrl;
-    if (okMsg) toast(okMsg);
+    // Email result (when the script tried to send one)
+    cloudState.mail = j.email || null;
+    if (j.email && j.email.sent) toast(`${okMsg ? okMsg + " · " : ""}📧 Email sent to ${j.email.to}`);
+    else if (j.email && !j.email.sent) toast(`${okMsg ? okMsg + " — but " : ""}the email wasn't sent: ${j.email.error}`);
+    else if (okMsg) toast(okMsg);
   } catch (e) {
     cloudState.error = /not owner/.test(e.message) ? "Your owner code wasn't accepted by the Google Sheet." : "Couldn't reach your Google Sheet. Check your internet connection and tap Refresh.";
     if (/not owner/.test(e.message)) AUTH.setOwnerCode("");
   }
   cloudState.loading = false; cloudState.busy = false;
   if (view === "owner") render();
+  return j;
 }
 
 function renderOwnerCloud() {
@@ -276,10 +282,11 @@ function renderOwnerCloud() {
     return `<div class="cust ${st}">
       <div class="cust-main"><b>${esc(x.customer)}</b>
         <span class="pill ${st === "active" ? "" : st === "expired" ? "pink" : "purple"}">${st === "active" ? "✅ Active" : st === "expired" ? "⌛ Expired" : "⛔ Turned off"}</span>
-        <div class="muted" style="font-size:.85rem">${x.email ? esc(x.email) + " · " : ""}Added ${esc(x.added || "—")}${code ? ` · Code: <span class="code-mini">${esc(code)}</span>` : ""}</div></div>
+        <div class="muted" style="font-size:.85rem">${x.email ? esc(x.email) + " · " : ""}Added ${esc(x.added || "—")}${code ? ` · Code: <span class="code-mini">${esc(code)}</span>` : ""}${x.emailed ? ` · 📧 Emailed ${esc(x.emailed)}` : ""}</div></div>
       <div class="cust-actions">
         <label class="muted" style="font-size:.8rem">Expires <input type="date" data-cinput="expires" data-h="${esc(x.hash)}" value="${esc(x.expires || "")}"></label>
         ${code ? `<button class="copy" data-copy="${esc(welcomeMessage(x.customer, code))}">Copy message</button>` : ""}
+        ${cloudState.version >= 3 && x.email && code ? `<button class="btn small" data-cact="email" data-h="${esc(x.hash)}">📧 ${x.emailed ? "Email again" : "Email code"}</button>` : ""}
         <button class="btn small secondary" data-cact="toggle" data-h="${esc(x.hash)}">${x.active === false ? "Turn on" : "Turn off"}</button>
         <button class="btn small ghost" data-cact="newcode" data-h="${esc(x.hash)}">New code</button>
         <button class="btn small ghost" data-cact="delete" data-h="${esc(x.hash)}">Delete</button>
@@ -290,11 +297,13 @@ function renderOwnerCloud() {
     ${cloudState.sheetUrl ? `<a class="btn small secondary" href="${esc(cloudState.sheetUrl)}" target="_blank" rel="noopener">📊 Open my Google Sheet</a>` : ""}<button class="btn small ghost" data-cact="refresh">↻ Refresh</button></div></div>
   ${cloudState.error ? `<div class="warn">⚠️ ${esc(cloudState.error)}</div>` : ""}
   ${cloudState.loading && !cloudState.list ? `<div class="card"><p class="muted">Loading your customers from Google Sheets…</p></div>` : ""}
-  ${cloudState.list && cloudState.version < 2 ? `<div class="card unsaved"><b>🆕 Update your Google Sheet script to see each customer's code in the sheet.</b>
+  ${cloudState.list && cloudState.version < 3 ? `<div class="card unsaved"><b>🆕 Update your Google Sheet script to turn on automatic welcome emails${cloudState.version < 2 ? " and see each customer's code in the sheet" : ""}.</b>
+    <p class="muted" style="margin:6px 0 0">Google will ask you to allow “Send email as you” — that's how the welcome emails are sent from your Gmail.</p>
     <ol class="steps" style="margin-top:6px">
       <li>Open your Google Sheet → <b>Extensions → Apps Script</b>.</li>
       <li>Select everything in the editor and delete it, then paste the new script: ${copyBtn(SHEETS_SCRIPT, "Copy the new SANARA script")} → click 💾 <b>Save</b>.</li>
       <li><b>Deploy → Manage deployments</b> → click the ✏️ <b>pencil</b> → <b>Version: New version</b> → <b>Deploy</b>. (Use Manage deployments, not New deployment, so your link stays the same.)</li>
+      <li>If Google asks for permission: <b>Authorize access</b> → your account → <b>Advanced</b> → <b>Go to SANARA Logins</b> → <b>Allow</b>.</li>
       <li>Come back here and tap <b>↻ Refresh</b>.</li>
     </ol></div>` : ""}
   ${(() => { const miss = cloudState.version >= 2 ? (cloudState.list || []).filter((x) => !x.code && codes[x.hash]) : []; return miss.length ? `<div class="card unsaved"><div class="row"><div><b>🔑 ${miss.length} customer${miss.length > 1 ? "s" : ""} in your sheet ${miss.length > 1 ? "don't" : "doesn't"} show a code yet.</b><br><span class="muted">${esc(miss.map((x) => x.customer).join(", "))} — this device remembers ${miss.length > 1 ? "their codes" : "the code"}.</span></div><span class="spacer"></span><button class="btn" data-cact="fillcodes">Add ${miss.length > 1 ? "codes" : "code"} to the sheet</button></div></div>` : ""; })()}
@@ -313,20 +322,22 @@ function renderOwnerCloud() {
       <div class="field"><label for="c-email">Email (optional)</label><input id="c-email" name="email" type="email" placeholder="maria@example.com"></div>
       <div class="field"><label for="c-exp">Access ends on (optional)</label><input id="c-exp" name="expires" type="date"></div>
     </div>
+    ${cloudState.version >= 3 ? `<label class="email-opt"><input type="checkbox" name="sendEmail" checked> 📧 Email the code to the customer automatically <span class="muted">(sent from your Gmail · needs an email above)</span></label>` : ""}
     <div class="row" style="margin-top:12px"><button class="btn" type="submit" ${cloudState.busy ? "disabled" : ""}>${cloudState.busy ? "Saving…" : "✨ Create login code"}</button><span class="muted" style="font-size:.88rem">Saved automatically. Works for the customer right away.</span></div>
   </form>
 
   ${last ? `<div class="card new-code"><h2>🎉 Login created for ${esc(last.name)}</h2><div class="code-out">${esc(last.code)}</div>
     <div class="row" style="justify-content:center"><button class="copy" data-copy="${esc(last.code)}">Copy code</button><button class="copy" data-copy="${esc(welcomeMessage(last.name, last.code))}">Copy welcome message</button></div>
     <details style="margin-top:10px"><summary class="muted" style="cursor:pointer">See the welcome message</summary><div class="prompt-box">${esc(welcomeMessage(last.name, last.code))}</div></details>
-    <p class="muted" style="margin-top:8px">✅ Already saved. Just send the message to your customer.</p></div>` : ""}
+    <p class="muted" style="margin-top:8px">${last.mail && last.mail.sent ? `✅ Saved and 📧 <b>emailed to ${esc(last.mail.to)}</b>. Nothing else to do! (Ask them to check Spam if they don't see it.)` : last.mail && !last.mail.sent ? `✅ Saved. ⚠️ The email wasn't sent: ${esc(last.mail.error)}. Copy the message above and send it yourself.` : "✅ Already saved. Just send the message to your customer."}</p></div>` : ""}
 
   <div class="card">
     <div class="row"><h2 style="margin:0">👥 Customers</h2><span class="spacer"></span><input class="search" data-oinput="search" value="${esc(ownerState.search)}" placeholder="🔎 Search name or email"></div>
     <div style="margin-top:12px">${shown.length ? shown.map(row).join("") : `<p class="muted">${cloudState.list ? "No customers yet — create your first login above." : ""}</p>`}</div>
   </div>
   <div class="card"><h3>ℹ️ Good to know</h3><ul>
-    <li>You can also edit the Google Sheet directly: change a name or end date, or type <b>FALSE</b> in the <b>active</b> column to turn someone off.</li>
+    <li>You can also edit the Google Sheet directly: change a name, email or end date, or type <b>FALSE</b> in the <b>active</b> column to turn someone off.</li>
+    <li>📧 Welcome emails are sent from your own Gmail (up to about 100 per day on a free Gmail account). If a customer can't find it, ask them to check Spam or Promotions, or tap <b>Email again</b>.</li>
     <li>A customer who is turned off is signed out the next time they open the app.</li>
     <li>Codes are remembered only on this device so you can copy them again. The sheet keeps only scrambled fingerprints.</li>
   </ul></div>`;
@@ -357,8 +368,13 @@ document.addEventListener("submit", async (e) => {
     const code = newAccessCode(), hash = await AUTH.sha256("sanara:" + code);
     rememberCode(hash, code);
     ownerState.last = { name, code };
+    const email = val("email");
+    const box = f.elements.namedItem("sendEmail");
+    const sendEmail = !!(box && box.checked && email);
+    if (box && box.checked && !email) toast("No email typed — the login is created, but nothing is emailed");
     cloudState.busy = true; render();
-    await cloudLoad("add", { entry: { customer: name, email: val("email"), hash, code, expires: val("expires") } }, `Login created for ${name} ✨`);
+    const j = await cloudLoad("add", { entry: { customer: name, email, hash, code, expires: val("expires") }, sendEmail }, `Login created for ${name} ✨`);
+    if (j && ownerState.last && ownerState.last.code === code) { ownerState.last.mail = j.email || null; render(); }
   }
 });
 
@@ -377,11 +393,19 @@ document.addEventListener("click", (e) => {
     case "toggle": if (x) cloudLoad("update", { hash: x.hash, changes: { active: x.active === false } }, x.active === false ? `${x.customer} turned on` : `${x.customer} turned off`); break;
     case "delete": if (x) sanaraConfirm(`Delete ${x.customer}? Their code stops working right away.`, () => cloudLoad("delete", { hash: x.hash }, "Deleted"), "Delete"); break;
     case "newcode":
-      if (x) sanaraConfirm(`Make a new code for ${x.customer}? The old code stops working right away.`, async () => {
-        const code = newAccessCode(), hash = await AUTH.sha256("sanara:" + code);
-        rememberCode(hash, code); ownerState.last = { name: x.customer, code };
-        await cloudLoad("update", { hash: x.hash, changes: { newHash: hash, newCode: code } }, "New code saved"); window.scrollTo(0, 0);
-      }, "New code");
+      if (x) {
+        const willEmail = cloudState.version >= 3 && !!x.email;
+        sanaraConfirm(`Make a new code for ${x.customer}? The old code stops working right away.${willEmail ? ` The new code will be emailed to ${x.email}.` : ""}`, async () => {
+          const code = newAccessCode(), hash = await AUTH.sha256("sanara:" + code);
+          rememberCode(hash, code); ownerState.last = { name: x.customer, code };
+          const j = await cloudLoad("update", { hash: x.hash, changes: { newHash: hash, newCode: code }, sendEmail: willEmail }, "New code saved");
+          if (j && ownerState.last && ownerState.last.code === code) { ownerState.last.mail = j.email || null; render(); }
+          window.scrollTo(0, 0);
+        }, "New code");
+      }
+      break;
+    case "email":
+      if (x) sanaraConfirm(`Email ${x.customer}'s access code to ${x.email}?`, () => cloudLoad("email", { hash: x.hash, code: x.code || knownCodes()[x.hash] || "" }), "Send email");
       break;
     case "import": {
       const list = cloudState.list || [];

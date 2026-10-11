@@ -8,7 +8,7 @@ const SANARA_GPT_URL = "";
 
 /* SANARA_APP_URL: the web address of your SANARA app once it's online (e.g. "https://sanara-app.netlify.app").
  * It's added to the welcome message you send new customers from the 👑 Owner menu. Leave empty if not online yet. */
-const SANARA_APP_URL = "";
+const SANARA_APP_URL = "https://sanara-app.vercel.app";
 
 /* SANARA_CLOUD_URL: your Google Sheets "Web app" link (it starts with https://script.google.com/macros/s/…/exec).
  * When set, customer logins save AUTOMATICALLY in your Google Sheet — no more saving or replacing files.

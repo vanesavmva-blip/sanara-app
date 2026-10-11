@@ -333,6 +333,8 @@ ol.steps li { margin-bottom: 7px; }
 .cust-actions input[type=date] { border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; font-size: .8rem; }
 
 .cloud-setup { border: 2px solid var(--teal); }
+.email-opt { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; font-weight: 700; color: var(--green-dark); }
+.email-opt input { width: 18px; height: 18px; accent-color: var(--green-dark); }
 .cloud-setup summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 /* ---------- Confirmation box ---------- */
