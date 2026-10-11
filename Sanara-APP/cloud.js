@@ -49,6 +49,14 @@ function sheet_() {
   return sh;
 }
 
+// ▶ Run this once from the editor (choose "testEmail" next to the Run button) to allow Gmail
+//   sending — Google will ask for permission — and get a test email in your own inbox.
+function testEmail() {
+  const me = Session.getEffectiveUser().getEmail();
+  MailApp.sendEmail(me, "SANARA test email ✅", "If you can read this, SANARA can send welcome emails from your Gmail.");
+  Logger.log("✅ Test email sent to " + me + " · emails left today: " + MailApp.getRemainingDailyQuota());
+}
+
 /* ---------- Welcome email (sent from your own Gmail) ---------- */
 function esc_(s) { return String(s || "").replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 function sendWelcome_(name, email, code, appUrl, isNewCode) {
